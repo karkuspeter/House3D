@@ -92,6 +92,7 @@ def parse_walls(objFile, lower_bound = 1.0):
 def fill_region(proj,x1,y1,x2,y2,c):
     proj[x1:(x2+1), y1:(y2+1)] = c
 
+
 def fill_obj_mask(house, dest, obj, c=1):
     n_row = dest.shape[0]
     _x1, _, _y1 = obj['bbox']['min']
@@ -113,7 +114,7 @@ class House(object):
                  RobotRadius=0.1,
                  RobotHeight=0.75,  # 1.0,
                  CarpetHeight=0.15,
-                 _IgnoreSmallHouse=False  # should be only set true when called by "cache_houses.py"
+                 _IgnoreSmallHouse=False,  # should be only set true when called by "cache_houses.py"
                  ):
         """Initialization and Robot Parameters
 
@@ -186,7 +187,8 @@ class House(object):
         ts = time.time()
         # generate a low-resolution obstacle map
         self.tinyObsMap = np.ones((self.eagle_n_row, self.eagle_n_row), dtype=np.uint8)
-        self.genObstacleMap(MetaDataFile, gen_debug_map=False, dest=self.tinyObsMap, n_row=self.eagle_n_row-1)
+        self.genObstacleMap(MetaDataFile, gen_debug_map=False, dest=self.tinyObsMap, n_row=self.eagle_n_row-1,
+                            include_objects=True)
         self.eagleMap = np.zeros((4, self.eagle_n_row, self.eagle_n_row), dtype=np.uint8)
         self.eagleMap[0, ...] = self.tinyObsMap
         print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
@@ -210,10 +212,11 @@ class House(object):
             self.genObstacleMap(MetaDataFile)
             print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
             # generate movability map for robots considering the radius
-            print('Generate Movability Map ...')
+            print('Generate Dummy Movability Map ...')
             ts = time.time()
             self.moveMap = np.zeros((self.n_row+1, self.n_row+1), dtype=np.int8)  # initially not movable
             self.genMovableMap()
+            #self.moveMap = np.copy(self.obsMap)
             print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
 
             if StorageFile is not None:
@@ -222,6 +225,10 @@ class House(object):
                 with open(StorageFile, 'wb') as f:
                     pickle.dump([self.obsMap, self.moveMap], f)
                 print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
+
+        print('Generate Floor Map ...')
+        self.floorMap = np.ones((self.n_row+1, self.n_row+1), dtype=np.uint8)  # a small int is enough
+        self.genObstacleMap(MetaDataFile, dest=self.floorMap, include_objects=False)
 
         # set target room connectivity
         print('Generate Target connectivity Map (Default <{}>) ...'.format(self.default_roomTp))
@@ -500,7 +507,7 @@ class House(object):
             self.setTargetRoom(t)
         self.setTargetRoom(self.default_roomTp)
 
-    def genObstacleMap(self, MetaDataFile, gen_debug_map=True, dest=None, n_row=None):
+    def genObstacleMap(self, MetaDataFile, gen_debug_map=True, dest=None, n_row=None, include_objects=True):
         # load all the doors
         target_match_class = 'nyuv2_40class'
         target_door_labels = ['door', 'fence', 'arch']
@@ -569,13 +576,14 @@ class House(object):
                 fill_region(self._debugMap, x1, y1, x2, y2, 0.5)
 
         # mark all the objects obstacle
-        for obj in colide_obj:
-            _x1, _, _y1 = obj['bbox']['min']
-            _x2, _, _y2 = obj['bbox']['max']
-            x1,y1,x2,y2 = self.rescale(_x1,_y1,_x2,_y2,n_row)
-            fill_region(obsMap,x1,y1,x2,y2,1)
-            if gen_debug_map and (self._debugMap is not None):
-                fill_region(self._debugMap, x1, y1, x2, y2, 0.8)
+        if include_objects:
+            for obj in colide_obj:
+                _x1, _, _y1 = obj['bbox']['min']
+                _x2, _, _y2 = obj['bbox']['max']
+                x1,y1,x2,y2 = self.rescale(_x1,_y1,_x2,_y2,n_row)
+                fill_region(obsMap,x1,y1,x2,y2,1)
+                if gen_debug_map and (self._debugMap is not None):
+                    fill_region(self._debugMap, x1, y1, x2, y2, 0.8)
 
     def genMovableMap(self):
         for i in range(self.n_row+1):

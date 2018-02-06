@@ -22,6 +22,10 @@ if __name__ == '__main__':
         if t % 1000 == 0:
             env.reset()
         mat = env.debug_render()
+
+        #print (env.info['grid'])
+        #print (env.info['yaw'])
+
         # writer.write(mat)
         cv2.imshow("aaa", mat)
         key = cv2.waitKey(0)

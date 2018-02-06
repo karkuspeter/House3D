@@ -41,6 +41,7 @@ if __name__ == '__main__':
             mat = mat[:, :, 0] * (infmask == 0)
         else:
             mat = mat[:, :, ::-1]   # cv expects bgr
+
         cv2.imshow("aaa", mat)
         key = cv2.waitKey(0)
         if key == 27 or key == ord('q'): #esc

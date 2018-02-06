@@ -60,6 +60,7 @@ class Environment():
             house._id = 0
 
         self.cachedLocMap = None
+        self.cachedFloorMap = None
 
         self.api_mode = RenderMode.RGB
         self.api = api
@@ -169,6 +170,29 @@ class Environment():
         x, y = house.to_grid(x, y)
         locMap = cv2.circle(locMap, (x, y), int(rad), (255, 50, 50), thickness=-1)
         locMap = cv2.resize(locMap, resolution)
+        return locMap
+
+
+    def gen_2dfloormap(self):
+        """
+            An RGB image of the building layout
+        """
+        house = self.house
+        n_row = house.n_row
+
+        # TODO move cachedLocMap to House
+        if self.cachedFloorMap is None:
+            locMap = np.zeros((n_row + 1, n_row + 1, 3), dtype=np.uint8)
+            for i in range(n_row):  # w
+                for j in range(n_row):  # h
+                    if house.floorMap[i, j] == 0:
+                        locMap[j, i, :] = 255
+                    # if house.canMove(i, j):
+                    #     locMap[j, i, :2] = 200  # purple
+            self.cachedFloorMap = locMap.copy()
+        else:
+            locMap = self.cachedFloorMap.copy()
+
         return locMap
 
     def _check_collision_fast(self, pA, pB, num_samples=5):

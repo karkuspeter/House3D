@@ -8,7 +8,7 @@ import tqdm
 import cv2
 import numpy as np
 import os
-import queue
+import Queue as queue
 import time
 import argparse
 

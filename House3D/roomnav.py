@@ -109,7 +109,6 @@ class RoomNavTask(gym.Env):
         self.env = env
         assert isinstance(env, Environment), '[RoomNavTask] env must be an instance of Environment!'
         if env.resolution != (120, 90): reset_see_criteria(env.resolution)
-        self.house = env.house
         self.resolution = resolution = env.resolution
         assert reward_type in [None, 'none', 'linear', 'indicator', 'delta', 'speed']
         self.reward_type = reward_type
@@ -131,7 +130,7 @@ class RoomNavTask(gym.Env):
 
         self.discrete_action = discrete_action
         if discrete_action:
-            self._action_space = spaces.Discrete(12)
+            self._action_space = spaces.Discrete(n_discrete_actions)
         else:
             self._action_space = spaces.Tuple([spaces.Box(0, 1, shape=(4,)), spaces.Box(0, 1, shape=(2,))])
 
@@ -205,6 +204,10 @@ class RoomNavTask(gym.Env):
             else:
                 self.availCoors = self._availCoorsDict[_id][self.house.targetRoomTp]
 
+    @property
+    def house(self):
+        return self.env.house
+
     """
     gym api: reset function
     when target is not None, we will set the target room type to navigate to
@@ -217,6 +220,8 @@ class RoomNavTask(gym.Env):
 
         # reset house
         self.env.reset_house()
+
+        self.house.targetRoomTp = None  # [NOTE] IMPORTANT! clear this!!!!!
 
         # reset target room
         self.reset_target(target=target)  # randomly reset
@@ -342,7 +347,7 @@ class RoomNavTask(gym.Env):
         # object seen reward
         if (raw_dist == 0) and (self.success_measure == 'see'):  # inside target room and success measure is <see>
             if not done:
-                object_reward = max(0.0, (self._object_cnt - n_pixel_for_object_sense) / L_pixel_reward_range) * pixel_object_reward
+                object_reward = np.clip((self._object_cnt - n_pixel_for_object_sense) / L_pixel_reward_range, 0., 1.) * pixel_object_reward
                 reward += object_reward
 
         if self.depth_signal:

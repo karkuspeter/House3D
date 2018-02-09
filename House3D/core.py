@@ -177,23 +177,23 @@ class Environment():
         """
             An RGB image of the building layout
         """
-        house = self.house
-        n_row = house.n_row
+        # house = self.house
+        # n_row = house.n_row
+        #
+        # # TODO move cachedLocMap to House
+        # if self.cachedFloorMap is None:
+        #     locMap = np.zeros((n_row + 1, n_row + 1, 3), dtype=np.uint8)
+        #     for i in range(n_row):  # w
+        #         for j in range(n_row):  # h
+        #             if self.house.floorMap[i, j] == 0:
+        #                 locMap[j, i, :] = 255
+        #             # if house.canMove(i, j):
+        #             #     locMap[j, i, :2] = 200  # purple
+        #     self.cachedFloorMap = locMap.copy()
+        # else:
+        #     locMap = self.cachedFloorMap.copy()
 
-        # TODO move cachedLocMap to House
-        if self.cachedFloorMap is None:
-            locMap = np.zeros((n_row + 1, n_row + 1, 3), dtype=np.uint8)
-            for i in range(n_row):  # w
-                for j in range(n_row):  # h
-                    if house.floorMap[i, j] == 0:
-                        locMap[j, i, :] = 255
-                    # if house.canMove(i, j):
-                    #     locMap[j, i, :2] = 200  # purple
-            self.cachedFloorMap = locMap.copy()
-        else:
-            locMap = self.cachedFloorMap.copy()
-
-        return locMap
+        return self.house.floorMap.copy()
 
     def _check_collision_fast(self, pA, pB, num_samples=5):
         ratio = 1.0 / num_samples

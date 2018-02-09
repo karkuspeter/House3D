@@ -12,7 +12,7 @@ import pickle
 import itertools
 import copy
 
-import pdb
+import ipdb as pdb
 
 __all__ = ['House']
 
@@ -196,7 +196,7 @@ class House(object):
         # load from cache
         if CachedFile is not None:
             assert not DebugInfoOn, 'Please set DebugInfoOn=True when loading data from cached file!'
-            print('Loading Obstacle Map and Movability Map From Cache File ...')
+            print('Loading Obstacle Map and Movability Map From Cache File %s...'%CachedFile)
             ts = time.time()
             with open(CachedFile, 'rb') as f:
                 self.obsMap, self.moveMap = pickle.load(f)
@@ -212,15 +212,16 @@ class House(object):
             self.genObstacleMap(MetaDataFile)
             print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
             # generate movability map for robots considering the radius
-            print('Generate Dummy Movability Map ...')
             ts = time.time()
+            print('Generate Movability Map ...')
             self.moveMap = np.zeros((self.n_row+1, self.n_row+1), dtype=np.int8)  # initially not movable
-            self.genMovableMap()
-            #self.moveMap = np.copy(self.obsMap)
+            self.genMovableMap()  # this takes really long
+            #print('Generate Dummy Movability Map ...')
+            #self.moveMap = np.copy(np.array(self.obsMap == 0, 'i'))  # assuming zero-radius robot
             print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
 
             if StorageFile is not None:
-                print('Storing Obstacle Map and Movability Map to Cache File ...')
+                print('Storing Obstacle Map and Movability Map to Cache File %s...'%StorageFile)
                 ts = time.time()
                 with open(StorageFile, 'wb') as f:
                     pickle.dump([self.obsMap, self.moveMap], f)

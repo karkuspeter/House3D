@@ -22,6 +22,7 @@ def load_config(filename):
     required_files = ["prefix", "modelCategoryFile", "colorFile"]
     for f in required_files:
         assert f in config, 'Invalid config! key <{}> is missing!'.format(f)
+        config[f] = os.path.expanduser(config[f])
         assert os.path.exists(config[f]), 'Invalid config! path <{}> not exists!'.format(config[f])
         if ('File' in f):
             assert os.path.isfile(config[f]), 'Invalid config! <{}> is not a valid file!'.format(config[f])

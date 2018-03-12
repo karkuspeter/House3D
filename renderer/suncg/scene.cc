@@ -128,7 +128,11 @@ SUNCGScene::SUNCGScene(string obj_file, string model_category_file,
       set_object_name_resolution_mode(ObjectNameResolution::FINE);
 
     // filter out person
-    model_category_.filter_category(obj_.shapes, {"person"});
+    // model_category_.filter_category(obj_.shapes, {"person"});
+    // TODO there should be an option for this. Dont know where the interface is, ie how to pass in from python
+
+    // keep only walls, ceilig, floor
+    model_category_.keep_category(obj_.shapes, {"empty", "wall", "ceiling", "floor", "window", "fence"});
     // split shapes
     obj_.split_shapes_by_material();
     obj_.printInfo();

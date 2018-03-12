@@ -48,6 +48,32 @@ class ModelCategory final {
       );
     }
 
+    // only keep certain shape categories (e.g. show walls, floor and ceiling)
+    void keep_category(
+        std::vector<ObjLoader::Shape>& shapes,
+        const std::unordered_set<std::string>& categories) {
+      shapes.erase(
+          std::remove_if(shapes.begin(), shapes.end(),
+            // remove person from the scene
+            [&](const ObjLoader::Shape& shape) {
+              std::string name = shape.name;
+              static std::string prefix = "Model#";
+              if (name.substr(0, prefix.size()) != prefix)
+                return false;
+              name = name.substr(prefix.size());
+              auto itr = coarse_grained_class_.find(name);
+              if (itr != coarse_grained_class_.end()){
+                if (categories.count(itr->second)) {
+                  print_debug("Keeping %s of class %s\n", shape.name.c_str(), itr->second.c_str());
+                  return false;
+                }
+                //return true;
+              }
+              return true;
+            }), shapes.end()
+      );
+    }
+
     std::string get_coarse_grained_class(std::string model_id) {
       auto itr = coarse_grained_class_.find(model_id);
       if (itr == coarse_grained_class_.end()) {

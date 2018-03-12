@@ -152,6 +152,7 @@ class House(object):
         # validity check
         if abs(house['scaleToMeters'] - 1.0) > 1e-8:
             print('[Error] Currently <scaleToMeters> must be 1.0!')
+            # if this changes, make sure the change is propagated to the floormap size
             assert(False)
         if len(house['levels']) > 1:
             print('[Warning] Currently only support ground floor! <total floors = %d>' % (len(house['levels'])))
@@ -162,9 +163,16 @@ class House(object):
         self.L_max_coor = _L_hi = np.array(level['bbox']['max'])
         self.L_hi = max(_L_hi[0], _L_hi[2])
         self.L_det = self.L_hi - self.L_lo
-        self.n_row = ColideRes
+        if ColideRes is not None:
+            self.n_row = ColideRes
+            self.grid_det = self.L_det / self.n_row
+        else:
+            self.grid_det = 1.0 / 50.0  # compute everything back from here
+            self.n_row = int(np.ceil(self.L_det * 50.0))
+            self.L_det = self.grid_det * self.n_row
+            self.L_hi = self.L_det + self.L_lo
+
         self.eagle_n_row = EagleViewRes
-        self.grid_det = self.L_det / self.n_row
         self.all_obj = [node for node in level['nodes'] if node['type'].lower() == 'object']
         self.all_rooms = [node for node in level['nodes'] if (node['type'].lower() == 'room') and ('roomTypes' in node)]
         self.all_roomTypes = [room['roomTypes'] for room in self.all_rooms]
@@ -216,8 +224,8 @@ class House(object):
             print('Generate Movability Map ...')
             self.moveMap = np.zeros((self.n_row+1, self.n_row+1), dtype=np.int8)  # initially not movable
             self.genMovableMap()  # this takes really long
-            #print('Generate Dummy Movability Map ...')
-            #self.moveMap = np.copy(np.array(self.obsMap == 0, 'i'))  # assuming zero-radius robot
+            # print('Generate Dummy Movability Map ...')
+            # self.moveMap = np.copy(np.array(self.obsMap == 0, 'i'))  # assuming zero-radius robot
             print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
 
             if StorageFile is not None:
@@ -414,6 +422,7 @@ class House(object):
                 if len(curr_components) == 0:
                     print('WARNING!!!! [House] No Space Found in TargetRoom <tp=%s, bbox=[%.2f, %2f] x [%.2f, %.2f]>' %
                           (targetRoomTp, _x1, _x2, _y1, _y2))
+                    #pdb.set_trace()
                     continue
                 if isinstance(curr_components[0], list):  # join all the coors in the open components
                     curr_major_coors = list(itertools.chain(*curr_components))

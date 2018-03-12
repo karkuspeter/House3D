@@ -35,7 +35,7 @@ def create_house(houseID, config, cachefile=None):
     if not os.path.isfile(cachefile):
         cachefile = None
     house = House(jsonFile, objFile, config["modelCategoryFile"],
-                  CachedFile=cachefile, GenRoomTypeMap=True)
+                  CachedFile=cachefile, GenRoomTypeMap=True, ColideRes=None)  # default no colideres
     return house
 
 def local_create_house(h, config):
@@ -194,6 +194,19 @@ class Environment():
         #     locMap = self.cachedFloorMap.copy()
 
         return self.house.floorMap.copy()
+
+    # def can_move_in_grid(self, pA, pB, num_samples=5):
+    #     """
+    #     true if agent can move from A to B withouth collisions
+    #     reimplements _check_collision_fast assuming pA and pB are grid coordinates
+    #     """
+    #     ratio = 1.0 / num_samples
+    #     for i in range(num_samples):
+    #         p = (pB - pA) * (i + 1) * ratio + pA
+    #         gx, gy = p
+    #         if (not self.house.canMove(gx, gy)) or (not self.house.isConnect(gx, gy)):
+    #             return False
+    #     return True
 
     def _check_collision_fast(self, pA, pB, num_samples=5):
         ratio = 1.0 / num_samples
@@ -361,6 +374,9 @@ class Environment():
             self.rotate(-2 * scale)
         elif key == ord('l'):
             self.rotate(2 * scale)
+        elif key == ord('x'):
+            import ipdb
+            ipdb.set_trace()
         else:
             logging.warning("Unknown key: {}".format(key))
         return True

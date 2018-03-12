@@ -14,7 +14,7 @@ if __name__ == '__main__':
     api = objrender.RenderAPI(w=600, h=450, device=0)
     cfg = load_config('config.json')
 
-    env = Environment(api, '00065ecbdd7300d35ef4328ffe871505', cfg)
+    env = Environment(api, '07d1d46444ca33d50fbcb5dc12d7c103', cfg)  #'06f7826572be27f205e701783960416e'  00065ecbdd7300d35ef4328ffe871505
 
     # fourcc = cv2.VideoWriter_fourcc(*'X264')
     # writer = cv2.VideoWriter('out.avi', fourcc, 30, (1200, 900))
@@ -23,8 +23,7 @@ if __name__ == '__main__':
             env.reset()
         mat = env.debug_render()
 
-        #print (env.info['grid'])
-        #print (env.info['yaw'])
+        print (env.info['grid'], env.info['yaw'])
 
         # writer.write(mat)
         cv2.imshow("aaa", mat)

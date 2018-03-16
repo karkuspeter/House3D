@@ -12,7 +12,10 @@ import pickle
 import itertools
 import copy
 
-import ipdb as pdb
+try:
+    import ipdb as pdb
+except Exception:
+    import pdb
 
 __all__ = ['House']
 

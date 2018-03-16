@@ -13,6 +13,8 @@ from House3D import objrender, Environment, load_config
 if __name__ == '__main__':
     api = objrender.RenderAPI(w=600, h=450, device=0)
     cfg = load_config('config.json')
+    cfg['prefix'] = cfg['prefix'] + './house_split_train/'
+    print cfg['prefix']
 
     env = Environment(api, '07d1d46444ca33d50fbcb5dc12d7c103', cfg)  #'06f7826572be27f205e701783960416e'  00065ecbdd7300d35ef4328ffe871505
 

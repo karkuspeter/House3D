@@ -375,8 +375,11 @@ class Environment():
         elif key == ord('l'):
             self.rotate(2 * scale)
         elif key == ord('x'):
-            import ipdb
-            ipdb.set_trace()
+            try:
+                import ipdb as pdb
+            except Exception:
+                import pdb
+            pdb.set_trace()
         else:
             logging.warning("Unknown key: {}".format(key))
         return True

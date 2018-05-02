@@ -3,12 +3,9 @@
 #
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
-import time
-import sys
-import numpy as np
-import json
+
 import csv
-import pickle
+import cv2
 import itertools
 import copy
 
@@ -16,6 +13,11 @@ try:
     import ipdb as pdb
 except Exception:
     import pdb
+
+import json
+import numpy as np
+import pickle
+import time
 
 __all__ = ['House']
 
@@ -36,6 +38,7 @@ def _equal_room_tp(room, target):
             DO NOT swap the order of arguments
     """
     room = room.lower()
+    target = target.lower()
     return (room == target) or \
             ((target == 'bathroom') and (room == 'toilet')) or \
             ((target == 'bedroom') and (room == 'guest_room'))
@@ -61,8 +64,8 @@ def parse_walls(objFile, lower_bound = 1.0):
             for i in range(3):
                 if v[i] < v_min[i]: v_min[i] = v[i]
                 if v[i] > v_max[i]: v_max[i] = v[i]
-        obj = dict()
-        obj['bbox'] = dict()
+        obj = {}
+        obj['bbox'] = {}
         obj['bbox']['min']=v_min
         obj['bbox']['max']=v_max
         if v_min[1] < lower_bound:
@@ -92,8 +95,9 @@ def parse_walls(objFile, lower_bound = 1.0):
     return ret_walls
 
 
-def fill_region(proj,x1,y1,x2,y2,c):
-    proj[x1:(x2+1), y1:(y2+1)] = c
+def fill_region(proj, x1, y1, x2, y2, c):
+    proj[x1:(x2 + 1), y1:(y2 + 1)] = c
+
 
 
 def fill_obj_mask(house, dest, obj, c=1):
@@ -117,7 +121,9 @@ class House(object):
                  RobotRadius=0.1,
                  RobotHeight=0.75,  # 1.0,
                  CarpetHeight=0.15,
-                 _IgnoreSmallHouse=False,  # should be only set true when called by "cache_houses.py"
+                 SetTarget=True,
+                 ApproximateMovableMap=False,
+                 _IgnoreSmallHouse=False  # should be only set true when called by "cache_houses.py"
                  ):
         """Initialization and Robot Parameters
 
@@ -138,6 +144,8 @@ class House(object):
             RobotRadius (double, optional): radius of the robot/agent (generally should not be changed)
             RobotHeight (double, optional): height of the robot/agent (generally should not be changed)
             CarpetHeight (double, optional): maximum height of the obstacles that agent can directly go through (gennerally should not be changed)
+            SetTarget (bool, optional): whether or not to choose a default target room and pre-compute the valid locations
+            ApproximateMovableMap (bool, optional): Fast initialization of valid locations which are not as accurate or fine-grained.  Requires OpenCV if true
         """
         ts = time.time()
         print('Data Loading ...')
@@ -179,15 +187,14 @@ class House(object):
         self.all_obj = [node for node in level['nodes'] if node['type'].lower() == 'object']
         self.all_rooms = [node for node in level['nodes'] if (node['type'].lower() == 'room') and ('roomTypes' in node)]
         self.all_roomTypes = [room['roomTypes'] for room in self.all_rooms]
-        desired_room_types = ALLOWED_TARGET_ROOM_TYPES
         self.all_desired_roomTypes = []
         self.default_roomTp = None
-        for roomTp in desired_room_types:
+        for roomTp in ALLOWED_TARGET_ROOM_TYPES:
             if any([any([_equal_room_tp(tp, roomTp) for tp in tps]) for tps in self.all_roomTypes]):
                 self.all_desired_roomTypes.append(roomTp)
                 if self.default_roomTp is None: self.default_roomTp = roomTp
         assert self.default_roomTp is not None, 'Cannot Find Any Desired Rooms!'
-        print('>> Target Room Type Selected = {}'.format(self.default_roomTp))
+        print('>> Default Target Room Type Selected = {}'.format(self.default_roomTp))
 
         print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
         if _IgnoreSmallHouse and ((len(self.all_desired_roomTypes) < 2) or ('kitchen' not in self.all_desired_roomTypes)):
@@ -226,7 +233,7 @@ class House(object):
             ts = time.time()
             print('Generate Movability Map ...')
             self.moveMap = np.zeros((self.n_row+1, self.n_row+1), dtype=np.int8)  # initially not movable
-            self.genMovableMap()  # this takes really long
+            self.genMovableMap(ApproximateMovableMap)  # this takes really long
             # print('Generate Dummy Movability Map ...')
             # self.moveMap = np.copy(np.array(self.obsMap == 0, 'i'))  # assuming zero-radius robot
             print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
@@ -245,13 +252,14 @@ class House(object):
         # set target room connectivity
         print('Generate Target connectivity Map (Default <{}>) ...'.format(self.default_roomTp))
         ts = time.time()
-        self.connMapDict = dict()
-        self.roomTypeLocMap = dict()    # roomType -> feasible locations
+        self.connMapDict = {}
+        self.roomTypeLocMap = {}    # roomType -> feasible locations
         self.targetRoomTp = None
         self.targetRooms = []
         self.connMap = None
         self.inroomDist = None
-        self.setTargetRoom(self.default_roomTp, _setEagleMap=True)
+        if SetTarget:
+            self.setTargetRoom(self.default_roomTp, _setEagleMap=True)
         print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
 
         self.roomTypeMap = None
@@ -293,7 +301,7 @@ class House(object):
             dirs = [[0, 1], [1, 0], [-1, 0], [0, -1]]
         comps = []
         open_comps = set()
-        visit = dict()
+        visit = {}
         n = 0
         for x in range(x1, x2+1):
             for y in range(y1, y2+1):
@@ -498,6 +506,10 @@ class House(object):
 
 
     def getRandomLocationForRoom(self, room_node):
+        '''Given a room node from the SUNCG house.json, returns a randomly
+           sampled valid location from that room.  Returns None if no valid
+           locations are found.
+        '''
         room_locs = self._getValidRoomLocations(room_node)
         if len(room_locs) == 0:
             return None
@@ -602,13 +614,54 @@ class House(object):
                 if gen_debug_map and (self._debugMap is not None):
                     fill_region(self._debugMap, x1, y1, x2, y2, 0.8)
 
-    def genMovableMap(self):
-        for i in range(self.n_row+1):
-            for j in range(self.n_row+1):
+
+
+    def genMovableMap(self, approximate=False):
+        roi_bounds = self._getRegionsOfInterest()
+        for roi in roi_bounds:
+            if approximate:
+                self._updateMovableMapApproximate(*roi)
+            else:
+                self._updateMovableMap(*roi)
+
+        if approximate:
+            self._adjustApproximateRobotMoveMap()
+
+
+    def _adjustApproximateRobotMoveMap(self):
+        # Here we haven't yet accounted for the robot radius, so do some
+        # approximate accommodation
+        robotGridSize = int(np.rint(self.robotRad * 2 * self.n_row / self.L_det))
+        if robotGridSize > 1:
+            robotGridRadius = robotGridSize // 2
+            kernel = np.zeros((robotGridSize, robotGridSize), np.uint8)
+            cv2.circle(kernel, (robotGridRadius + 1, robotGridRadius + 1), robotGridRadius, color=1, thickness=-1)
+            filtered_obstacles = (self.moveMap == 0).astype(np.uint8)
+            dilated_obstacles = cv2.dilate(filtered_obstacles, kernel, iterations=1)
+            self.moveMap = (dilated_obstacles == 0).astype(np.uint8)
+
+
+    def _updateMovableMap(self, x1, y1, x2, y2):
+        for i in range(x1, x2):
+            for j in range(y1, y2):
                 if self.obsMap[i,j] == 0:
                     cx, cy = self.to_coor(i, j, True)
                     if self.check_occupy(cx,cy):
                         self.moveMap[i,j] = 1
+
+
+    def _updateMovableMapApproximate(self, x1, y1, x2, y2):
+        self.moveMap[x1:x2, y1:y2] = (self.obsMap[x1:x2, y1:y2] == 0).astype(self.moveMap.dtype)
+
+
+    def _getRegionsOfInterest(self):
+        """Override this function for customizing the areas of the map to
+        consider when marking valid movable locations
+        Returns a list of (x1, y1, x2, y2) tuples representing bounding boxes
+        of valid areas.  Coordinates are normalized grid coordinates.
+        """
+        return [(0, 0, self.n_row+1, self.n_row+1)]
+
 
     """
     check whether the *grid* coordinate (x,y) is inside the house

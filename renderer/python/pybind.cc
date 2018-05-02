@@ -13,6 +13,8 @@
 #include "lib/mat.h"
 #include "lib/timer.hh"
 
+#include "house.hh"
+
 using namespace std;
 using namespace render;
 namespace py = pybind11;
@@ -71,6 +73,7 @@ PYBIND11_MODULE(objrender, m) {
     .value("SEMANTIC", SUNCGScene::RenderMode::SEMANTIC)
     .value("DEPTH", SUNCGScene::RenderMode::DEPTH)
     .value("INSTANCE", SUNCGScene::RenderMode::INSTANCE)
+    .value("INVDEPTH", SUNCGScene::RenderMode::INVDEPTH)
     .export_values();
 
   py::enum_<Camera::Movement>(camera, "Movement")
@@ -81,6 +84,9 @@ PYBIND11_MODULE(objrender, m) {
     .value("Up", Camera::Movement::UP)
     .value("Down", Camera::Movement::DOWN)
     .export_values();
+
+  py::class_<House>(m, "_House")
+    .def("f", &House::f);
 
   py::class_<glm::vec3>(m, "Vec3")
     .def(py::init<float, float, float>())

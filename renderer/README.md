@@ -24,7 +24,7 @@ pacman -S glfw-x11 libglvnd glm
 
 ### CentOS 7 with Nvidia GPU
 ```bash
-yum install libX11-devel glfw-devel glm-devel mesa-libEGL-devel autoconf automake libtool
+yum install libX11-devel glfw-devel glm-devel mesa-libGL-devel mesa-libEGL-devel libpng-devel libjpeg-devel autoconf automake libtool
 ```
 
 Then, install libglvnd:
@@ -61,17 +61,19 @@ wget https://github.com/g-truc/glm/releases/download/0.9.8.4/glm-0.9.8.4.zip
 unzip glm-0.9.8.4 && cd glm
 mkdir build && cd build && cmake .. -DCMAKE_INSTALL_PREFIX=SOME/INSTALL_DIR
 make && make install
-# add INSTALL_DIR/lib/pkgconfig to PKG_CONFIG_PATH
 ```
+Later, remember to compile with `INCLUDE_DIR=-I/path/to/INSTALL_DIR/include make`.
 
 Install EGL headers (the headers in apt is too old):
 ```
 cd INSTALL_DIR
-wget https://www.khronos.org/registry/EGL/api/EGL/egl.h
-wget https://www.khronos.org/registry/EGL/api/EGL/eglext.h
-wget https://www.khronos.org/registry/EGL/api/EGL/eglplatform.h
+wget -P EGL https://www.khronos.org/registry/EGL/api/EGL/egl.h
+wget -P EGL https://www.khronos.org/registry/EGL/api/EGL/eglext.h
+wget -P EGL https://www.khronos.org/registry/EGL/api/EGL/eglplatform.h
 ```
-When compiling the library later, remember to use `INCLUDE_DIR=-I/path/to/INSTALL_DIR make`.
+Later, remember to compile `INCLUDE_DIR=-I/path/to/INSTALL_DIR make`.
+
+If multiple `INCLUDE_DIR` need to be added, use `INCLUDE_DIR=-I/path/one -I/path/two`.
 
 No need to install libglvnd.
 
@@ -120,3 +122,11 @@ See `test-rendering.py` for its API.
 ## Trouble Shooting
 Run `./debug-build.sh` and include the results in your issues, as well as your
 environment, and how you build.
+
+### Common Issues:
+1. `Assertion "glGetString(GL_VERSION)" FAILED`: try building with libglvnd as mentioned above
+2. `undefined symbol: _ZTVNSt7__cxx1119basic_ostringstreamIcSt11char_traitsIcESaIcEEE` C++ ABI incompatibility.
+3. X server error: don't ssh with X forwarding. Make sure there is no "DISPLAY" environment variable.
+4. "Framebuffer is not complete" after opening many renderer: there seems to be a hard limit, depending on the hardwares,
+	on the number of rendering context you can use at the same time.
+5. "dynamic module does not define init function": compile-time and run-time python version does not match.

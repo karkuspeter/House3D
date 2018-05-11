@@ -13,10 +13,10 @@ from House3D import objrender, Environment, load_config
 if __name__ == '__main__':
     api = objrender.RenderAPI(w=600, h=450, device=0)
     cfg = load_config('config.json')
-    cfg['prefix'] = cfg['prefix'] + './house_split_train/'
+    cfg['prefix'] = cfg['prefix'] + './house_split_test/'
     print cfg['prefix']
 
-    env = Environment(api, '07d1d46444ca33d50fbcb5dc12d7c103', cfg)  #'06f7826572be27f205e701783960416e'  00065ecbdd7300d35ef4328ffe871505
+    env = Environment(api, '0a417c6459befd8a9fa4a5428f2de1e9', cfg) #'0a96348d9c8acf673d3da07b6316e671' '07d1d46444ca33d50fbcb5dc12d7c103', cfg)  #'06f7826572be27f205e701783960416e'  00065ecbdd7300d35ef4328ffe871505
 
     # fourcc = cv2.VideoWriter_fourcc(*'X264')
     # writer = cv2.VideoWriter('out.avi', fourcc, 30, (1200, 900))

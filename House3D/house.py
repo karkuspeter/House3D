@@ -19,6 +19,8 @@ import numpy as np
 import pickle
 import time
 
+ALWAYS_REGENERATE = False
+
 __all__ = ['House']
 
 ######################################
@@ -68,16 +70,66 @@ def parse_walls(objFile, lower_bound = 1.0):
         obj['bbox'] = {}
         obj['bbox']['min']=v_min
         obj['bbox']['max']=v_max
+
         if v_min[1] < lower_bound:
             return obj
         return None
+
+    def create_poly(vers):
+        # oriented bounding box
+
+        if len(vers) == 0:
+            return None
+        v_max = [-1e20, -1e20, -1e20]
+        v_min = [1e20, 1e20, 1e20]
+        for v in vers:
+            for i in range(3):
+                if v[i] < v_min[i]: v_min[i] = v[i]
+                if v[i] > v_max[i]: v_max[i] = v[i]
+
+        points = np.array(np.array(vers)[:, (0, 2)])
+
+        ca = np.cov(points, y=None, rowvar=0, bias=1)
+        v, vect = np.linalg.eig(ca)
+        tvect = np.transpose(vect)
+
+        # use the inverse of the eigenvectors as a rotation matrix and
+        # rotate the points so they align with the x and y axes
+        ar = np.dot(points, np.linalg.inv(tvect))
+
+        # get the minimum and maximum x and y
+        mina = np.min(ar, axis=0)
+        maxa = np.max(ar, axis=0)
+        diff = (maxa - mina) * 0.5
+
+        # the center is just half way between the min and max xy
+        center = mina + diff
+
+        # get the 4 corners by subtracting and adding half the bounding boxes height and width to the center
+        corners = np.array(
+            [center + [-diff[0], -diff[1]], center + [diff[0], -diff[1]], center + [diff[0], diff[1]],
+             center + [-diff[0], diff[1]], center + [-diff[0], -diff[1]]])
+
+        # use the the eigenvectors as a rotation matrix and
+        # rotate the corners and the centerback
+        corners = np.dot(corners, tvect)
+        center = np.dot(center, tvect)
+
+        if v_min[1] < lower_bound:
+            return corners
+        return None
+
+
     walls = []
+    wall_polygons = []
     with open(objFile, 'r') as file:
         vers = []
         for line in file.readlines():
             if len(line) < 2: continue
             if line[0] == 'g':
-                if (vers is not None) and (len(vers) > 0): walls.append(create_box(vers))
+                if (vers is not None) and (len(vers) > 0):
+                    walls.append(create_box(vers))
+                    wall_polygons.append(create_poly(vers))
                 if ('Wall' in line):
                     vers = []
                 else:
@@ -90,14 +142,36 @@ def parse_walls(objFile, lower_bound = 1.0):
                     print('coor = {}'.format(coor))
                     assert(False)
                 vers.append(coor)
-    if (vers is not None) and (len(vers) > 0): walls.append(create_box(vers))
+    if (vers is not None) and (len(vers) > 0):
+        walls.append(create_box(vers))
+        wall_polygons.append(create_poly(vers))
     ret_walls = [w for w in walls if w is not None]
-    return ret_walls
+    ret_polys = [w for w in wall_polygons if w is not None]
+    return ret_walls, ret_polys
 
 
 def fill_region(proj, x1, y1, x2, y2, c):
     proj[x1:(x2 + 1), y1:(y2 + 1)] = c
+    # pts = np.array([(y1, x1), (y1, x2), (y2, x2), (y2, x1)])
+    # x = cv2.fillConvexPoly(proj, pts, c)
+    # proj[:,:] = x
 
+
+def fill_poly(proj, points, c, linewidth):
+    #proj[x1:(x2 + 1), y1:(y2 + 1)] = c
+    assert np.isclose(points[0], points[-1]).all()
+    points = np.array(points, 'i')
+
+    similar = [np.isclose(points[0], points[i]).all() for i in range(4)]
+    if any(similar[1:]):
+        p1 = points[0]
+        p2 = (points[1] if not similar[1] else (points[2] if not similar[2] else points[3]))
+        x = cv2.line(proj, (p1[1], p1[0]), (p2[1], p2[0]), c, linewidth)
+    else:
+        pts = np.array(points)
+        pts = pts[:, ::-1]
+        x = cv2.fillConvexPoly(proj, pts, c)
+    proj[:,:] = x
 
 
 def fill_obj_mask(house, dest, obj, c=1):
@@ -158,7 +232,7 @@ class House(object):
         self._debugMap = None if not DebugInfoOn else True
         with open(JsonFile) as jfile:
             self.house = house = json.load(jfile)
-        self.all_walls = parse_walls(ObjFile, RobotHeight)
+        self.all_walls, self.all_wall_polygons = parse_walls(ObjFile, RobotHeight)
 
         # validity check
         if abs(house['scaleToMeters'] - 1.0) > 1e-8:
@@ -187,6 +261,7 @@ class House(object):
         self.all_obj = [node for node in level['nodes'] if node['type'].lower() == 'object']
         self.all_rooms = [node for node in level['nodes'] if (node['type'].lower() == 'room') and ('roomTypes' in node)]
         self.all_roomTypes = [room['roomTypes'] for room in self.all_rooms]
+        self.all_outdoors = [node for node in level['nodes'] if (node['type'].lower() == 'ground') and ('roomTypes' in node)]
         self.all_desired_roomTypes = []
         self.default_roomTp = None
         for roomTp in ALLOWED_TARGET_ROOM_TYPES:
@@ -206,13 +281,13 @@ class House(object):
         # generate a low-resolution obstacle map
         self.tinyObsMap = np.ones((self.eagle_n_row, self.eagle_n_row), dtype=np.uint8)
         self.genObstacleMap(MetaDataFile, gen_debug_map=False, dest=self.tinyObsMap, n_row=self.eagle_n_row-1,
-                            include_objects=True)
+                            include_objects=True, downscaled=True)
         self.eagleMap = np.zeros((4, self.eagle_n_row, self.eagle_n_row), dtype=np.uint8)
         self.eagleMap[0, ...] = self.tinyObsMap
         print('  --> Done! Elapsed = %.2fs' % (time.time()-ts))
 
         # load from cache
-        if CachedFile is not None:
+        if CachedFile is not None and not ALWAYS_REGENERATE:
             assert not DebugInfoOn, 'Please set DebugInfoOn=True when loading data from cached file!'
             print('Loading Obstacle Map and Movability Map From Cache File %s...'%CachedFile)
             ts = time.time()
@@ -271,22 +346,27 @@ class House(object):
             print('  --> Done! Elapsed = %.2fs' % (time.time() - ts))
 
 
-    def _generate_room_type_map(self):
-        rtMap = self.roomTypeMap
+    def _generate_room_type_map(self, rtMap=None, moveMap=None, n_row=None):
+        if rtMap is None:
+            rtMap = self.roomTypeMap
+        if moveMap is None:
+            moveMap = self.moveMap
+        if n_row is None:
+            n_row = self.n_row
         # fill all the mask of rooms
         for room in self.all_rooms:
             msk = 1 << _get_pred_room_tp_id('indoor')
             for tp in room['roomTypes']: msk = msk | (1 << _get_pred_room_tp_id(tp))
             _x1, _, _y1 = room['bbox']['min']
             _x2, _, _y2 = room['bbox']['max']
-            x1, y1, x2, y2 = self.rescale(_x1, _y1, _x2, _y2)
+            x1, y1, x2, y2 = self.rescale(_x1, _y1, _x2, _y2, n_row)
             for x in range(x1, x2+1):
                 for y in range(y1, y2+1):
-                    if self.moveMap[x, y] > 0:
+                    if moveMap[x, y] > 0:
                         rtMap[x, y] = rtMap[x, y] | msk
-        for x in range(self.n_row+1):
-            for y in range(self.n_row+1):
-                if (self.moveMap[x, y] > 0) and (rtMap[x, y] == 0):
+        for x in range(n_row+1):
+            for y in range(n_row+1):
+                if (moveMap[x, y] > 0) and (rtMap[x, y] == 0):
                     rtMap[x, y] = 1 << _get_pred_room_tp_id('outdoor')
 
 
@@ -536,7 +616,8 @@ class House(object):
             self.setTargetRoom(t)
         self.setTargetRoom(self.default_roomTp)
 
-    def genObstacleMap(self, MetaDataFile, gen_debug_map=True, dest=None, n_row=None, include_objects=True):
+    def genObstacleMap(self, MetaDataFile, gen_debug_map=True, dest=None, n_row=None, include_objects=True,
+                       downscaled=False):
         # load all the doors
         target_match_class = 'nyuv2_40class'
         target_door_labels = ['door', 'fence', 'arch']
@@ -564,6 +645,7 @@ class House(object):
         solid_obj = [obj for obj in self.all_obj if (not is_door(obj)) and (obj['modelId'] not in person_ids)]  # ignore person
         door_obj = [obj for obj in self.all_obj if is_door(obj)]
         colide_obj = [obj for obj in solid_obj if obj['bbox']['min'][1] < self.robotHei and obj['bbox']['max'][1] > self.carpetHei]
+            #[obj for obj in self.all_outdoors]  # add all outdoor "ground" objects. hopefully these dont overlap with the actual building
         # generate the map for all the obstacles
         obsMap = dest if dest is not None else self.obsMap
         if n_row is None:
@@ -574,6 +656,7 @@ class House(object):
             fill_region(self._debugMap, x1, y1, x2, y2, 0)
         # fill boundary of rooms
         maskRoom = np.zeros_like(obsMap,dtype=np.int8)
+        # original code based on bounding boxes
         for wall in self.all_walls:
             _x1, _, _y1 = wall['bbox']['min']
             _x2, _, _y2 = wall['bbox']['max']
@@ -582,6 +665,21 @@ class House(object):
             if gen_debug_map and (self._debugMap is not None):
                 fill_region(self._debugMap, x1, y1, x2, y2, 1)
             fill_region(maskRoom, x1, y1, x2, y2, 1)
+
+        # use polygons
+        for wall in self.all_wall_polygons:
+            wall_poly = self.rescale_array(np.array(wall), n_row)
+            fill_poly(obsMap, wall_poly, 1, linewidth=(1 if downscaled else 2))
+            if gen_debug_map and (self._debugMap is not None):
+                fill_poly(self._debugMap, wall_poly, 1, linewidth=(1 if downscaled else 2))
+            fill_poly(maskRoom, wall_poly, 1, linewidth=(1 if downscaled else 2))
+
+        # import matplotlib.pyplot as plt, ipdb as pdb
+        # plt.ion()
+        # plt.figure(); plt.imshow(obsMap.transpose())
+        # obsMap2 = np.copy(obsMap)  # this can correct some cases of misplaced doors, it will still show wall on the map
+        # # but it could cause problems in other cases for which this "expansion" was introduced
+
         # remove all the doors
         for obj in door_obj:
             _x1, _, _y1 = obj['bbox']['min']
@@ -589,6 +687,8 @@ class House(object):
             x1,y1,x2,y2 = self.rescale(_x1,_y1,_x2,_y2,n_row)
             cx = (x1 + x2) // 2
             cy = (y1 + y2) // 2
+            # fill_region(obsMap2,x1,y1,x2,y2,0)
+
             # expand region
             if x2 - x1 < y2 - y1:
                 while (x1 - 1 >= 0) and (maskRoom[x1-1,cy] > 0):
@@ -604,6 +704,9 @@ class House(object):
             if gen_debug_map and (self._debugMap is not None):
                 fill_region(self._debugMap, x1, y1, x2, y2, 0.5)
 
+        # plt.figure(); plt.imshow(obsMap.transpose()); plt.show()
+        # plt.figure(); plt.imshow(obsMap2.transpose()); plt.show()
+
         # mark all the objects obstacle
         if include_objects:
             for obj in colide_obj:
@@ -614,6 +717,26 @@ class House(object):
                 if gen_debug_map and (self._debugMap is not None):
                     fill_region(self._debugMap, x1, y1, x2, y2, 0.8)
 
+            #plt.figure(); plt.imshow(obsMap.transpose()); plt.show()
+
+            # mask out outdoors
+            rtMap = np.zeros((n_row + 1, n_row + 1), dtype=np.uint16)
+
+            # fill all the mask of rooms
+            for room in self.all_rooms:
+                msk = 1 << _get_pred_room_tp_id('indoor')
+                for tp in room['roomTypes']: msk = msk | (1 << _get_pred_room_tp_id(tp))
+                _x1, _, _y1 = room['bbox']['min']
+                _x2, _, _y2 = room['bbox']['max']
+                x1, y1, x2, y2 = self.rescale(_x1, _y1, _x2, _y2, n_row)
+                for x in range(x1, x2 + 1):
+                    for y in range(y1, y2 + 1):
+                        rtMap[x, y] = rtMap[x, y] | msk
+
+            # anything thats not a indoor should be an obstacles
+            obsMap[rtMap == 0] = 1
+
+            #plt.figure(); plt.imshow(obsMap.transpose()); plt.show()
 
 
     def genMovableMap(self, approximate=False):
@@ -688,6 +811,11 @@ class House(object):
         tx2 = np.floor((x2 - self.L_lo) / self.L_det * n_row+tiny)
         ty2 = np.floor((y2 - self.L_lo) / self.L_det * n_row+tiny)
         return int(tx1),int(ty1),int(tx2),int(ty2)
+
+    def rescale_array(self, x, n_row):
+        if n_row is None: n_row = self.n_row
+        tiny = 1e-9
+        return np.floor((x - self.L_lo) / self.L_det * n_row+tiny)
 
     def to_grid(self, x, y, n_row=None):
         """

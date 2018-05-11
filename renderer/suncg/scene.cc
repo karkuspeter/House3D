@@ -156,7 +156,7 @@ SUNCGScene::SUNCGScene(string obj_file, string model_category_file,
 
     // keep only walls, ceilig, floor
     #ifdef KEEP_WALLS_ONLY
-    model_category_.keep_category(obj_.shapes, {"empty", "wall", "ceiling", "floor", "window", "fence"});
+    model_category_.keep_category(obj_.shapes, {"empty", "wall", "ceiling", "floor", "fence"});  // "window",
     #endif
     // TODO there should be an option for this. Dont know where the interface is, ie how to pass in from python
 

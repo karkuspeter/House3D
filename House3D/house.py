@@ -322,7 +322,8 @@ class House(object):
 
         print('Generate Floor Map ...')
         self.floorMap = np.ones((self.n_row+1, self.n_row+1), dtype=np.uint8)  # a small int is enough
-        self.genObstacleMap(MetaDataFile, dest=self.floorMap, include_objects=False)
+        self.doorMap = np.zeros((self.n_row+1, self.n_row+1), dtype=np.uint8)
+        self.genObstacleMap(MetaDataFile, dest=self.floorMap, doorMap=self.doorMap, include_objects=False)
 
         # set target room connectivity
         print('Generate Target connectivity Map (Default <{}>) ...'.format(self.default_roomTp))
@@ -342,32 +343,46 @@ class House(object):
             ts = time.time()
             print('Generate Room Type Map ...')
             self.roomTypeMap = np.zeros((self.n_row+1, self.n_row+1), dtype=np.uint16)
-            self._generate_room_type_map()
+            self.roomTypeBinaryMap = np.zeros((self.n_row + 1, self.n_row + 1, 9), dtype=np.uint8)
+            self.roomIdMap = np.zeros((self.n_row+1, self.n_row+1), dtype=np.uint16)
+            self._generate_room_type_map(self.roomTypeMap, rtBinaryMap=self.roomTypeBinaryMap,
+                                         idMap=self.roomIdMap,
+                                         n_row=self.n_row,
+                                         moveMap=1-self.floorMap,  # originally exludes obstacles, for that moveMap=self.moveMap
+                                         )
             print('  --> Done! Elapsed = %.2fs' % (time.time() - ts))
 
 
-    def _generate_room_type_map(self, rtMap=None, moveMap=None, n_row=None):
-        if rtMap is None:
-            rtMap = self.roomTypeMap
-        if moveMap is None:
-            moveMap = self.moveMap
-        if n_row is None:
-            n_row = self.n_row
-        # fill all the mask of rooms
-        for room in self.all_rooms:
-            msk = 1 << _get_pred_room_tp_id('indoor')
-            for tp in room['roomTypes']: msk = msk | (1 << _get_pred_room_tp_id(tp))
+    def _generate_room_type_map(self, rtMap, rtBinaryMap, idMap, n_row, moveMap=None):
+        # fill all the mask of rooms. excludes obstacles if moveMap is not None
+        for roomid, room in enumerate(self.all_rooms):
+            room_type_ids = [_get_pred_room_tp_id('indoor')] + \
+                            [_get_pred_room_tp_id(tp) for tp in room['roomTypes']]
+            room_type_ids = list(set(room_type_ids))  # unique values
+
+            msk = 0
+            for id in room_type_ids:
+                msk = msk | (1 << id)
+
             _x1, _, _y1 = room['bbox']['min']
             _x2, _, _y2 = room['bbox']['max']
             x1, y1, x2, y2 = self.rescale(_x1, _y1, _x2, _y2, n_row)
+
+            #obstacle_mask = (moveMap[x1:x2+1, y1:y2+1] > 0)
             for x in range(x1, x2+1):
                 for y in range(y1, y2+1):
-                    if moveMap[x, y] > 0:
+                    if moveMap is None or moveMap[x, y] > 0:
                         rtMap[x, y] = rtMap[x, y] | msk
+                        rtBinaryMap[x, y, room_type_ids] = 1
+                    idMap[x,y] = roomid+1  #TODO this overwrites whatever was there when rooms bounds overlap
+
+        # fill the rest as outdoor
+        outdoor_id = _get_pred_room_tp_id('outdoor')
         for x in range(n_row+1):
             for y in range(n_row+1):
-                if (moveMap[x, y] > 0) and (rtMap[x, y] == 0):
-                    rtMap[x, y] = 1 << _get_pred_room_tp_id('outdoor')
+                if (moveMap is None or moveMap[x, y] > 0) and (rtMap[x, y] == 0):
+                    rtMap[x, y] = (1 << outdoor_id)
+                    rtBinaryMap[x, y, outdoor_id] = 1
 
 
     def _find_components(self, x1, y1, x2, y2, dirs=None, return_largest=False, return_open=False):
@@ -616,12 +631,16 @@ class House(object):
             self.setTargetRoom(t)
         self.setTargetRoom(self.default_roomTp)
 
-    def genObstacleMap(self, MetaDataFile, gen_debug_map=True, dest=None, n_row=None, include_objects=True,
+    def genObstacleMap(self, MetaDataFile, gen_debug_map=True, dest=None,
+                       doorMap=None,
+                       n_row=None, include_objects=True,
                        downscaled=False):
         # load all the doors
         target_match_class = 'nyuv2_40class'
         target_door_labels = ['door', 'fence', 'arch']
+        real_door_labels = ['door']
         door_ids = set()
+        real_door_ids = set()
         fine_grained_class = 'fine_grained_class'
         ignored_labels = ['person', 'umbrella', 'curtain']
         person_ids = set()
@@ -631,13 +650,18 @@ class House(object):
             for row in reader:
                 if row[target_match_class] in target_door_labels:
                     door_ids.add(row['model_id'])
+                if row[target_match_class] in real_door_labels:
+                    real_door_ids.add(row['model_id'])
                 if row[target_match_class] == 'window':
                     window_ids.add(row['model_id'])
                 if row[fine_grained_class] in ignored_labels:
                     person_ids.add(row['model_id'])
-        def is_door(obj):
-            if obj['modelId'] in door_ids:
+        def is_door(obj, only_real=False):
+            if not only_real and obj['modelId'] in door_ids:
                 return True
+            if only_real and obj['modelId'] in real_door_ids:
+                return True
+            # TODO this should not be here for a new dataset. Im just lazy to regenerate all.
             if (obj['modelId'] in window_ids) and (obj['bbox']['min'][1] < self.carpetHei):
                 return True
             return False
@@ -680,7 +704,9 @@ class House(object):
         # obsMap2 = np.copy(obsMap)  # this can correct some cases of misplaced doors, it will still show wall on the map
         # # but it could cause problems in other cases for which this "expansion" was introduced
 
-        # remove all the doors
+        obsMapWithDoors = obsMap.copy()
+
+        # remove all the doors, add to doorMap if needed
         for obj in door_obj:
             _x1, _, _y1 = obj['bbox']['min']
             _x2, _, _y2 = obj['bbox']['max']
@@ -701,8 +727,34 @@ class House(object):
                 while (y2+1 < maskRoom.shape[1]) and (maskRoom[cx,y2+1] > 0):
                     y2 += 1
             fill_region(obsMap,x1,y1,x2,y2,0)
+
+            # add to doorMap
+            if doorMap is not None and is_door(obj, only_real=True):
+                localmap = obsMapWithDoors[x1:x2+1, y1:y2+1]
+                if x2 - x1 < y2 - y1:
+                    mask = np.all(localmap > 0, axis=1)
+                    if not np.any(mask):
+                        mask = np.logical_and(np.sum(obsMapWithDoors[x1:x2+1, max(y1-4,0):y1+5], axis=1) > 0,
+                                              np.sum(obsMapWithDoors[x1:x2+1, max(y2-4,0):y2+5], axis=1) > 0)  # along x axis there is a wall
+                    for x in np.nonzero(mask)[0]:
+                        doorMap[x1+x, y1:(y2+1)] = 1
+                else:
+                    mask = np.all(localmap > 0, axis=0)
+                    if not np.any(mask):
+                        mask = np.logical_and(np.sum(obsMapWithDoors[max(x1-4,0):x1+5, y1:y2+1], axis=0) > 0,
+                                              np.sum(obsMapWithDoors[max(x2-4,0):x2+5, y1:y2+1], axis=0) > 0)  # along y axis there is a wall
+                    for y in np.nonzero(mask)[0]:
+                        doorMap[x1:(x2+1), y1+y] = 1
+                if not np.any(mask):
+                    # doesnt touch with any door. keep the entire bounding box
+                    fill_region(doorMap, x1, y1, x2, y2, 1)
+
             if gen_debug_map and (self._debugMap is not None):
                 fill_region(self._debugMap, x1, y1, x2, y2, 0.5)
+
+        # # doors should be only over walls
+        # if doorMap is not None:
+        #     doorMap[obsMapWithDoors == 0] = 0
 
         # plt.figure(); plt.imshow(obsMap.transpose()); plt.show()
         # plt.figure(); plt.imshow(obsMap2.transpose()); plt.show()

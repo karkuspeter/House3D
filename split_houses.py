@@ -5,8 +5,10 @@ train_houses = ["0aca661702f546f161effb91c4a3be3a", "05fbb325a0809a06568644431c1
 small_houses = ["00065ecbdd7300d35ef4328ffe871505", "cf57359cd8603c3d9149445fb4040d90", "ff32675f2527275171555259b4a1b3c3", "775941abe94306edc1b5820e3a992d75", "7995c2a93311717a3a9c48d789563590", "8b8c1994f3286bfc444a7527ffacde86", "31966fdc9f9c87862989fae8ae906295", "32e53679b33adfcc5a5660b8c758cc96", "4383029c98c14177640267bd34ad2f3c", "0884337c703e7c25949d3a237101f060", "492c5839f8a534a673c92912aedc7b63", "a7e248efcdb6040c92ac0cdc3b2351a6", "2364b7dcc432c6d6dcc59dba617b5f4b", "e3ae3f7b32cf99b29d3c8681ec3be321", "f10ce4008da194626f38f937fb9c1a03", "e6f24af5f87558d31db17b86fe269cf2", "1dba3a1039c6ec1a3c141a1cb0ad0757", "b814705bc93d428507a516b866efda28", "26e33980e4b4345587d6278460746ec4", "5f3f959c7b3e6f091898caa8e828f110"]
 
 house_sets = {"train": train_houses, "test": test_houses}
-path_from = "/home/peter/suncg_data/house_all/"
-path_to = "/home/peter/suncg_data/house_split/"
+# path_from = "/home/peter/suncg_data/house_all/"
+# path_to = "/home/peter/suncg_data/house_split/"
+path_from = "/home/karkus/Code/suncg_data/house/"
+path_to = "/home/karkus/Code/suncg_data/house_split/"
 
 for name, house_set in house_sets.iteritems():
     for house in house_set:

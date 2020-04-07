@@ -259,7 +259,8 @@ class House(object):
 
         self.eagle_n_row = EagleViewRes
         self.all_obj = [node for node in level['nodes'] if node['type'].lower() == 'object']
-        self.all_rooms = [node for node in level['nodes'] if (node['type'].lower() == 'room') and ('roomTypes' in node)]
+        self.all_rooms = [node for node in level['nodes'] if (node['type'].lower() == 'room') and ('roomTypes' in node)
+                          and ('bbox' in node)]
         self.all_roomTypes = [room['roomTypes'] for room in self.all_rooms]
         self.all_outdoors = [node for node in level['nodes'] if (node['type'].lower() == 'ground') and ('roomTypes' in node)]
         self.all_desired_roomTypes = []
